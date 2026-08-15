@@ -1,0 +1,37 @@
+# ============================================================
+# multi-agent-synthesizer 設定檔範本
+# 複製本檔為 config.toml 後，填入你自己的設定：
+#   cp config.example.toml config.toml
+# config.toml 已被 .gitignore 排除，不會被推上 GitHub。
+# ============================================================
+
+# --- 模型 A：UI / 視覺專家（範例：Qwen） ---
+[qwen]
+base_url = "http://localhost:8084/v1"   # 你的 OpenAI 相容端點 (LM Studio / vLLM / llama.cpp / Ollama)
+api_key = "local"                        # 本地端隨意填寫
+model    = "你的模型名稱"                 # 例如 qwen3.8-27b；用 GET /v1/models 查詢
+system_prompt = "你是一個專精於 UI/UX 佈局的視覺工程師。請專注於畫面美觀、結構清晰與響應式設計。"
+
+# --- 模型 B：架構 / 狀態管理專家（範例：Muse） ---
+[muse]
+base_url = "http://localhost:8080/v1"
+api_key = "local"
+model    = "你的模型名稱"
+system_prompt = "你是一個專精於架構與資料流的工程師。請專注於狀態管理、解耦架構以及資料記錄 (Data Logger) 的穩健性。"
+
+# --- 融合節點：首席架構師（合併雙方產出） ---
+[synthesizer]
+base_url = "http://localhost:8080/v1"    # 通常交給推理能力最強的那顆模型
+api_key = "local"
+model    = "你的模型名稱"
+system_prompt = "你是一位資深的首席軟體架構師，擅長整合不同來源的程式碼並進行 Debug。"
+
+# --- 生成參數 ---
+[generation]
+temperature = 0.3
+max_tokens   = 4096
+
+# --- 單機替代方案 ---
+# 若無法同時掛載兩個模型，把 [qwen].base_url 與 [muse].base_url
+# 指向同一個伺服器、同一個 model，僅靠不同的 system_prompt 區分角色，
+# 一樣能達成「角色分工 → 融合」的效果。
