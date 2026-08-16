@@ -6,6 +6,7 @@ Multi-Agent Synthesizer
 
   synthesize  並行生成 + 融合大腦：兩模型同時作答，第三節點融合優點（預設）
   critique    互相審查：模型 B 產初稿，模型 A 以 UI/介面視角審查並輸出修正版
+              （加 --reverse 則反過來：模型 A 產 UI 初稿，模型 B 審查架構）
   pipeline    專長分工：模型 A 先產出結構化 JSON 規格，模型 B 依規格實作邏輯
 
 使用方式：
@@ -69,6 +70,25 @@ CRITIQUE_REVIEW_TEMPLATE = """你是一位專精 UI/UX 與前端介面的審查�
 2. 直接輸出修正後的完整整合版本（可直接執行、無衝突），並附上簡短的審查與修正說明。
 """
 
+# --- 模式二反向（--reverse）：模型 A 產 UI 初稿，模型 B 審查架構 ---
+CRITIQUE_DRAFT_SYSTEM_UI = (
+    "你是一個專精於 UI/UX 與視覺設計的前端工程師。"
+    "請產出完整可執行的第一版實作，著重畫面佈局、互動回饋與使用者體驗。"
+)
+CRITIQUE_REVIEW_TEMPLATE_ARCH = """你是一位專精架構與資料流的資深工程師。
+以下是前端工程師針對此任務產出的初稿：
+
+【任務】
+{task}
+
+【初稿】
+{draft}
+
+請你發揮架構與狀態管理的專業，審查這份程式碼：
+1. 指出狀態未集中管理、缺少資料記錄、元件耦合、邊界條件與錯誤處理不足等問題。
+2. 直接輸出修正後的完整整合版本（可直接執行、無衝突），並附上簡短的審查與修正說明。
+"""
+
 # --- 模式三：Specialized Pipeline（模型 A 產 JSON 規格，模型 B 實作） ---
 PIPELINE_SPEC_SYSTEM = (
     "你是一位需求分析與介面設計師。請將任務描述拆解成結構化的 JSON 規格，"
@@ -125,7 +145,7 @@ async def fetch_llm_response(client, model_name, system_prompt, user_prompt,
         return f"[{role_name}] 生成失敗: {e}"
 
 
-async def run_synthesize(cfg, task_prompt):
+async def run_synthesize(cfg, task_prompt, reverse=False):
     """模式一：並行生成 + 融合大腦。回傳 (階段產出 dict, 最終結果)。"""
     gen = cfg["generation"]
     client_a, client_b, client_s = _clients(cfg)
@@ -146,27 +166,39 @@ async def run_synthesize(cfg, task_prompt):
     return {"qwen": result_a, "muse": result_b}, final
 
 
-async def run_critique(cfg, task_prompt):
-    """模式二：互相審查 (Critic & Refine)。模型 B 產初稿，模型 A 審查修正。"""
+async def run_critique(cfg, task_prompt, reverse=False):
+    """模式二：互相審查 (Critic & Refine)。
+    預設：模型 B (Muse) 產架構初稿，模型 A (Qwen) 以 UI/介面視角審查修正。
+    reverse=True：模型 A 產 UI 初稿，模型 B 以架構/狀態視角審查修正。"""
     gen = cfg["generation"]
     client_a, client_b, _ = _clients(cfg)
 
-    print("=== 第一步：Muse 產出架構初稿 ===")
-    draft = await _call(client_b, cfg["muse"], task_prompt,
-                        "Muse-開發工程師", gen,
-                        system_override=CRITIQUE_DRAFT_SYSTEM)
+    if reverse:
+        d_client, d_sec, d_role = client_a, cfg["qwen"], "Qwen-前端工程師"
+        d_system = CRITIQUE_DRAFT_SYSTEM_UI
+        r_client, r_sec, r_role = client_b, cfg["muse"], "Muse-審查工程師"
+        r_template = CRITIQUE_REVIEW_TEMPLATE_ARCH
+    else:
+        d_client, d_sec, d_role = client_b, cfg["muse"], "Muse-開發工程師"
+        d_system = CRITIQUE_DRAFT_SYSTEM
+        r_client, r_sec, r_role = client_a, cfg["qwen"], "Qwen-審查工程師"
+        r_template = CRITIQUE_REVIEW_TEMPLATE
 
-    print("\n=== 第二步：Qwen 以 UI/介面視角審查並修正 ===")
+    print(f"=== 第一步：{d_role} 產出初稿 ===")
+    draft = await _call(d_client, d_sec, task_prompt, d_role, gen,
+                        system_override=d_system)
+
+    print(f"\n=== 第二步：{r_role} 審查並修正 ===")
     final = await _call(
-        client_a, cfg["qwen"],
-        CRITIQUE_REVIEW_TEMPLATE.format(task=task_prompt, draft=draft),
-        "Qwen-審查工程師", gen,
-        system_override=cfg["qwen"]["system_prompt"],
+        r_client, r_sec,
+        r_template.format(task=task_prompt, draft=draft),
+        r_role, gen,
+        system_override=r_sec["system_prompt"],
     )
     return {"draft": draft}, final
 
 
-async def run_pipeline(cfg, task_prompt):
+async def run_pipeline(cfg, task_prompt, reverse=False):
     """模式三：專長分工。模型 A 產 JSON 規格，模型 B 依規格實作。"""
     gen = cfg["generation"]
     client_a, client_b, _ = _clients(cfg)
@@ -211,6 +243,8 @@ async def main():
     parser = argparse.ArgumentParser(description="Multi-Agent Synthesizer")
     parser.add_argument("--mode", choices=sorted(MODES), default="synthesize",
                         help="協作模式（預設 synthesize）")
+    parser.add_argument("--reverse", action="store_true",
+                        help="critique 專用：反向審查（模型 A 產 UI 初稿，模型 B 審查架構）")
     parser.add_argument("task", nargs="*", help="任務描述（省略則用內建示範任務）")
     args = parser.parse_args()
 
@@ -218,11 +252,19 @@ async def main():
     task_prompt = " ".join(args.task).strip() or DEFAULT_TASK
     runner, mode_desc = MODES[args.mode]
 
-    print(f"=== 模式: {args.mode}（{mode_desc}） ===")
+    mode_label = args.mode
+    if args.reverse:
+        if args.mode == "critique":
+            mode_label = "critique-reverse"
+            mode_desc += "（反向：A 產稿、B 審查）"
+        else:
+            print(f"提示：--reverse 僅適用於 critique 模式，本次（{args.mode}）忽略。\n")
+
+    print(f"=== 模式: {mode_label}（{mode_desc}） ===")
     print(f"=== 任務 ===\n{task_prompt}\n")
 
     start_time = time.time()
-    stages, final_result = await runner(cfg, task_prompt)
+    stages, final_result = await runner(cfg, task_prompt, args.reverse)
 
     elapsed = time.time() - start_time
     print(f"\n總共花費時間: {elapsed:.1f} 秒")
@@ -236,9 +278,9 @@ async def main():
     files = {"task": task_prompt, "final": final_result}
     files.update(stages)
     for name, content in files.items():
-        (out_dir / f"{stamp}-{args.mode}-{name}.md").write_text(
+        (out_dir / f"{stamp}-{mode_label}-{name}.md").write_text(
             content, encoding="utf-8")
-    print(f"\n已存檔至 outputs/{stamp}-{args.mode}-*.md")
+    print(f"\n已存檔至 outputs/{stamp}-{mode_label}-*.md")
 
 
 if __name__ == "__main__":

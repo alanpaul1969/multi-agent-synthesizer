@@ -33,8 +33,10 @@ max_tokens   = 4096
 
 # --- 三種模式的差異 ---
 # synthesize（預設）：兩模型並行作答，融合節點整合優點。
-# critique：Muse 產架構初稿，Qwen 以 UI/介面視角審查並輸出修正版。
-# pipeline：Qwen 先產出結構化 JSON 規格，Muse 依規格實作核心邏輯。
+# critique：[muse] 產架構初稿，[qwen] 以 UI/介面視角審查並輸出修正版。
+#           加 --reverse 反轉：[qwen] 產 UI 初稿，[muse] 以架構視角審查修正。
+# pipeline：[qwen] 先產出結構化 JSON 規格（存 *-spec.md），
+#           [muse] 依規格實作核心邏輯，最終輸出為一份完整程式碼（*-final.md）。
 # 各模式的階段 prompt 內建在 synthesizer.py 中，可直接修改程式碼調整。
 
 # --- 單機替代方案 ---
