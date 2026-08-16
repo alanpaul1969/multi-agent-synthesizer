@@ -1,13 +1,13 @@
 # Multi-Agent Synthesizer
 
-> 雙本地 LLM 協作框架：讓兩顆本地模型分工合作、互審產出，並可包成一個 OpenAI 相容 endpoint 給任何 agent 直接載入。
+> 雙 LLM 協作框架：讓兩顆模型——本地、雲端或混搭——分工合作、互審產出，並可包成一個 OpenAI 相容 endpoint 給任何 agent 直接載入。
 >
-> A dual local-LLM collaboration framework: two local models divide work, review each other's output, and the whole pipeline can be served as a single OpenAI-compatible endpoint for any agent to load.
+> A dual-LLM collaboration framework: make two models — local, cloud, or a mix — divide work and review each other's output, and serve the whole pipeline as a single OpenAI-compatible endpoint for any agent to load.
 
 **[中文說明](#中文說明)** | **[English](#english)**
 
-適用於任何 OpenAI API 相容的本地伺服器（llama.cpp、LM Studio、vLLM、Ollama…）。
-Works with any OpenAI API-compatible local server (llama.cpp, LM Studio, vLLM, Ollama…).
+適用於任何 OpenAI API 相容端點：本地伺服器（llama.cpp、LM Studio、vLLM、Ollama…）或雲端 API（OpenAI、Groq、OpenRouter、DeepSeek…）。
+Works with any OpenAI-compatible endpoint: local servers (llama.cpp, LM Studio, vLLM, Ollama…) or cloud APIs (OpenAI, Groq, OpenRouter, DeepSeek…).
 
 ---
 
