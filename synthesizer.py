@@ -149,18 +149,22 @@ async def fetch_llm_response(client, model_name, system_prompt, user_prompt,
         return f"[{role_name}] 生成失敗: {e}"
 
 
-async def run_synthesize(cfg, task_prompt, reverse=False):
+async def run_synthesize(cfg, task_prompt, reverse=False, emit=None):
     """模式一：並行生成 + 融合大腦。回傳 (階段產出 dict, 最終結果)。"""
     gen = cfg["generation"]
     client_a, client_b, client_s = _clients(cfg)
 
     print("=== 第一階段：並行讓兩款模型各自發揮專長 ===")
+    if emit:
+        emit("第一階段：兩模型並行生成中...")
     result_a, result_b = await asyncio.gather(
         _call(client_a, cfg["qwen"], task_prompt, "Qwen-UI設計師", gen),
         _call(client_b, cfg["muse"], task_prompt, "Muse-架構工程師", gen),
     )
 
     print("\n=== 第二階段：融合大腦 (Synthesizer) ===")
+    if emit:
+        emit("第二階段：融合節點整合雙方產出中...")
     final = await _call(
         client_s, cfg["synthesizer"],
         SYNTHESIS_TEMPLATE.format(result_a=result_a, result_b=result_b),
@@ -170,7 +174,7 @@ async def run_synthesize(cfg, task_prompt, reverse=False):
     return {"qwen": result_a, "muse": result_b}, final
 
 
-async def run_critique(cfg, task_prompt, reverse=False):
+async def run_critique(cfg, task_prompt, reverse=False, emit=None):
     """模式二：互相審查 (Critic & Refine)。
     預設：模型 B (Muse) 產架構初稿，模型 A (Qwen) 以 UI/介面視角審查修正。
     reverse=True：模型 A 產 UI 初稿，模型 B 以架構/狀態視角審查修正。"""
@@ -189,10 +193,14 @@ async def run_critique(cfg, task_prompt, reverse=False):
         r_template = CRITIQUE_REVIEW_TEMPLATE
 
     print(f"=== 第一步：{d_role} 產出初稿 ===")
+    if emit:
+        emit(f"第一步：{d_role} 產出初稿中...")
     draft = await _call(d_client, d_sec, task_prompt, d_role, gen,
                         system_override=d_system)
 
     print(f"\n=== 第二步：{r_role} 審查並修正 ===")
+    if emit:
+        emit(f"第二步：{r_role} 審查並修正中...")
     final = await _call(
         r_client, r_sec,
         r_template.format(task=task_prompt, draft=draft),
@@ -202,17 +210,21 @@ async def run_critique(cfg, task_prompt, reverse=False):
     return {"draft": draft}, final
 
 
-async def run_pipeline(cfg, task_prompt, reverse=False):
+async def run_pipeline(cfg, task_prompt, reverse=False, emit=None):
     """模式三：專長分工。模型 A 產 JSON 規格，模型 B 依規格實作。"""
     gen = cfg["generation"]
     client_a, client_b, _ = _clients(cfg)
 
     print("=== 第一步：Qwen 拆解任務為結構化 JSON 規格 ===")
+    if emit:
+        emit("第一步：拆解任務為結構化 JSON 規格中...")
     spec = await _call(client_a, cfg["qwen"], task_prompt,
                        "Qwen-需求/介面分析師", gen,
                        system_override=PIPELINE_SPEC_SYSTEM)
 
     print("\n=== 第二步：Muse 依規格實作核心邏輯 ===")
+    if emit:
+        emit("第二步：依規格實作核心邏輯中（此步驟最耗時）...")
     final = await _call(
         client_b, cfg["muse"],
         PIPELINE_IMPL_TEMPLATE.format(task=task_prompt, spec=spec),
@@ -227,6 +239,33 @@ MODES = {
     "critique": (run_critique, "互相審查 (開發者 vs 審查者)"),
     "pipeline": (run_pipeline, "專長分工 (規格 → 實作)"),
 }
+
+
+async def run_mode(cfg, mode, task_prompt, reverse=False, emit=None):
+    """執行指定模式，回傳 (mode_label, 階段產出 dict, 最終結果)。
+    CLI 與 server.py 共用此進入點。"""
+    runner, mode_desc = MODES[mode]
+    mode_label = mode
+    if reverse:
+        if mode == "critique":
+            mode_label = "critique-reverse"
+        else:
+            reverse = False  # 其餘模式不支援反向
+    stages, final_result = await runner(cfg, task_prompt, reverse, emit=emit)
+    return mode_label, stages, final_result
+
+
+def save_outputs(mode_label, task_prompt, stages, final_result):
+    """把任務、階段產出與最終結果存到 outputs/，回傳時間戳。"""
+    out_dir = ROOT / "outputs"
+    out_dir.mkdir(exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    files = {"task": task_prompt, "final": final_result}
+    files.update(stages)
+    for name, content in files.items():
+        (out_dir / f"{stamp}-{mode_label}-{name}.md").write_text(
+            content, encoding="utf-8")
+    return stamp
 
 
 def _clients(cfg):
@@ -254,36 +293,23 @@ async def main():
 
     cfg = load_config()
     task_prompt = " ".join(args.task).strip() or DEFAULT_TASK
-    runner, mode_desc = MODES[args.mode]
 
-    mode_label = args.mode
-    if args.reverse:
-        if args.mode == "critique":
-            mode_label = "critique-reverse"
-            mode_desc += "（反向：A 產稿、B 審查）"
-        else:
-            print(f"提示：--reverse 僅適用於 critique 模式，本次（{args.mode}）忽略。\n")
+    if args.reverse and args.mode != "critique":
+        print(f"提示：--reverse 僅適用於 critique 模式，本次（{args.mode}）忽略。\n")
 
-    print(f"=== 模式: {mode_label}（{mode_desc}） ===")
+    print(f"=== 模式: {args.mode} ===")
     print(f"=== 任務 ===\n{task_prompt}\n")
 
     start_time = time.time()
-    stages, final_result = await runner(cfg, task_prompt, args.reverse)
+    mode_label, stages, final_result = await run_mode(
+        cfg, args.mode, task_prompt, args.reverse)
 
     elapsed = time.time() - start_time
     print(f"\n總共花費時間: {elapsed:.1f} 秒")
     print("\n=== 最終結果 ===\n")
     print(final_result)
 
-    # --- 存檔 ---
-    out_dir = ROOT / "outputs"
-    out_dir.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    files = {"task": task_prompt, "final": final_result}
-    files.update(stages)
-    for name, content in files.items():
-        (out_dir / f"{stamp}-{mode_label}-{name}.md").write_text(
-            content, encoding="utf-8")
+    stamp = save_outputs(mode_label, task_prompt, stages, final_result)
     print(f"\n已存檔至 outputs/{stamp}-{mode_label}-*.md")
 
 

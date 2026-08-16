@@ -80,12 +80,40 @@ python3 synthesizer.py --mode pipeline "開發一個圖片上傳 App，含離線
 結果顯示於終端機，並存到 `outputs/`，檔名含模式與階段
 （如 `*-critique-draft.md`、`*-critique-reverse-draft.md`、`*-pipeline-spec.md`、`*-final.md`）。
 
+## 當作 LLM endpoint 給 agent 用（server 模式）
+
+把整條流水線包成一個 OpenAI 相容端點，任何支援 OpenAI API 的
+agent／客戶端都能直接載入：
+
+```bash
+python3 server.py --port 8090
+```
+
+| 設定 | 值 |
+|---|---|
+| base_url | `http://localhost:8090/v1` |
+| api_key | 任意值（如 `local`） |
+| model | `mas/synthesize`、`mas/critique`、`mas/critique-reverse`、`mas/pipeline` |
+
+模式就是「模型名稱」：agent 要哪種協作模式，就選對應的 model。
+最後一則 user 訊息即為任務 prompt；請求可覆寫 `temperature` / `max_tokens`
+（不給則用 config.toml 的 `[generation]`）。
+
+注意事項：
+
+- 單次請求跑完整條流水線，約 **15–17 分鐘**，客戶端 timeout 要調大。
+- 請求序列化執行（底層模型一次只從容處理一條流水線），排隊中可用
+  `GET /health` 看 `busy` 狀態。
+- `stream=true` 時每 30 秒送 SSE keepalive（註解行，標準客戶端會忽略），
+  階段進度也以註解行推送，最終結果才進 content。
+
 ## Repo 內容
 
 ```
 synthesizer.py        主程式（三種模式：synthesize / critique / pipeline）
+server.py             OpenAI 相容 API 伺服器（把流水線包成 LLM endpoint）
 config.example.toml   設定檔範本（不含任何預設端點）
-requirements.txt      openai (async)
+requirements.txt      openai (async)、fastapi、uvicorn
 outputs/              執行產出（gitignore）
 ```
 
