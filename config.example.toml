@@ -31,6 +31,12 @@ system_prompt = "你是一位資深的首席軟體架構師，擅長整合不同
 temperature = 0.3
 max_tokens   = 4096
 
+# --- 三種模式的差異 ---
+# synthesize（預設）：兩模型並行作答，融合節點整合優點。
+# critique：Muse 產架構初稿，Qwen 以 UI/介面視角審查並輸出修正版。
+# pipeline：Qwen 先產出結構化 JSON 規格，Muse 依規格實作核心邏輯。
+# 各模式的階段 prompt 內建在 synthesizer.py 中，可直接修改程式碼調整。
+
 # --- 單機替代方案 ---
 # 若無法同時掛載兩個模型，把 [qwen].base_url 與 [muse].base_url
 # 指向同一個伺服器、同一個 model，僅靠不同的 system_prompt 區分角色，

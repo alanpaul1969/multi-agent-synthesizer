@@ -1,10 +1,11 @@
 # Multi-Agent Synthesizer
 
-讓兩個本地端 LLM 並行分工（UI 視覺 / 架構邏輯），再交給第三個「融合節點」
-整合成一份可直接使用的最終成果。適用於任何 OpenAI API 相容的本地伺服器
+雙本地 LLM 協作框架，三種可選模式，適用於任何 OpenAI API 相容的本地伺服器
 （llama.cpp、LM Studio、vLLM、Ollama…）。
 
-## 架構
+## 三種協作模式
+
+### 模式一 `synthesize`：並行生成 + 融合大腦（預設）
 
 ```
                 ┌──> 模型 A (UI / 視覺專家) ──┐
@@ -13,10 +14,23 @@
                      (asyncio.gather 並行)
 ```
 
-- **角色注入 (Role Prompting)**：透過 system prompt 限制各模型視野，
-  逼出單一領域的深度，減少幻覺。
-- **並行呼叫**：兩個生成任務同時進行，第一階段只需等最慢的那一個。
-- **融合**：將雙方草稿組成比較式 prompt，交給推理能力最強的模型整合。
+兩模型同時作答（並行，只需等最慢的一個），第三節點融合雙方優點。
+
+### 模式二 `critique`：互相審查 (Critic & Refine)
+
+```
+任務 ──> 模型 B 產架構初稿 ──> 模型 A 以 UI/介面視角審查、抓漏、輸出修正版
+```
+
+開發者與測試者的關係：不需要第三次生成，由審查者直接輸出整合修正版。
+
+### 模式三 `pipeline`：專長分工管線
+
+```
+任務 ──> 模型 A 拆解成結構化 JSON 規格 ──> 模型 B 依規格實作狀態管理與邏輯
+```
+
+不讓兩個模型做同一件事：A 負責需求/介面解析，B 負責核心邏輯實作。
 
 ## 安裝
 
@@ -44,20 +58,32 @@ cp config.example.toml config.toml   # 填入你自己的端點與模型名稱
 ## 執行
 
 ```bash
-# 不帶參數 = 內建示範任務 (Flutter + Riverpod + Logger 計數器)
+# 模式一（預設）：並行生成 + 融合；不帶任務 = 內建示範 (Flutter + Riverpod + Logger)
 python3 synthesizer.py
+python3 synthesizer.py --mode synthesize "自訂任務"
 
-# 自訂任務
-python3 synthesizer.py "用 React + Zustand 實作一個待辦清單，含本地快取"
+# 模式二：Muse 產初稿，Qwen 審查修正
+python3 synthesizer.py --mode critique "用 React + Zustand 實作待辦清單，含本地快取"
+
+# 模式三：Qwen 拆解 JSON 規格，Muse 依規格實作
+python3 synthesizer.py --mode pipeline "開發一個圖片上傳 App，含離線佇列與重試"
 ```
 
-結果顯示於終端機，並存到 `outputs/`（task / qwen / muse / final 各一份）。
+結果顯示於終端機，並存到 `outputs/`，檔名含模式與階段
+（如 `*-critique-draft.md`、`*-pipeline-spec.md`、`*-final.md`）。
 
 ## Repo 內容
 
 ```
-synthesizer.py        主程式（並行分發 + 融合）
+synthesizer.py        主程式（三種模式：synthesize / critique / pipeline）
 config.example.toml   設定檔範本（不含任何預設端點）
 requirements.txt      openai (async)
 outputs/              執行產出（gitignore）
 ```
+
+## 硬體提醒
+
+兩個 27B–30B 模型以 4-bit 量化同時常駐約需 34–36GB 統一記憶體/VRAM。
+不足時可把 `[qwen]` 與 `[muse]` 指向同一個伺服器、同一個模型，
+僅靠不同 system prompt 區分角色（模式仍有效）；或改用「循序載入」
+（先喚醒一個、結束釋放後再載入另一個），代價是換模型的載入時間。
