@@ -68,6 +68,13 @@ cp config.example.toml config.toml   # 填入你自己的端點與模型名稱
 區段名稱只是代號，任何兩顆模型都能套用。模型名稱可用
 `curl http://<host>:<port>/v1/models` 查詢。
 
+**本地、雲端都能用，也能混搭。** 每個區段各有自己的 `base_url` 與 `api_key`，
+任何 OpenAI 相容端點都行：本地的 llama.cpp / LM Studio / vLLM / Ollama，
+或雲端的 OpenAI（`https://api.openai.com/v1`）、Groq（`https://api.groq.com/openai/v1`）、
+OpenRouter（`https://openrouter.ai/api/v1`）、DeepSeek（`https://api.deepseek.com/v1`）、
+Together（`https://api.together.xyz/v1`）等。例如 `[qwen]` 用本地模型、
+`[synthesizer]` 用雲端強模型當融合大腦，混搭也行。
+
 **單機 VRAM 不足？** 把 `[qwen]` 與 `[muse]` 指向同一個伺服器、同一個模型，
 只靠不同的 system_prompt 區分角色，一樣有「思維碰撞 → 融合」的效果。
 
@@ -199,6 +206,14 @@ cp config.example.toml config.toml   # fill in YOUR OWN endpoints and model name
 
 Section names are just labels — any two models will do. Look up model names with
 `curl http://<host>:<port>/v1/models`.
+
+**Local, cloud, or a mix.** Each section has its own `base_url` and `api_key`,
+and any OpenAI-compatible endpoint works: local llama.cpp / LM Studio / vLLM /
+Ollama, or cloud OpenAI (`https://api.openai.com/v1`), Groq
+(`https://api.groq.com/openai/v1`), OpenRouter (`https://openrouter.ai/api/v1`),
+DeepSeek (`https://api.deepseek.com/v1`), Together (`https://api.together.xyz/v1`),
+etc. You can even mix — e.g. a local model for `[qwen]` and your strongest cloud
+model as the `[synthesizer]` fusion brain.
 
 **Not enough VRAM for two models?** Point `[qwen]` and `[muse]` at the same
 server and the same model, and separate the roles purely via different

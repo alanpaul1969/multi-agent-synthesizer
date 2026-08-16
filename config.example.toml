@@ -7,9 +7,10 @@
 
 # --- 模型 A：UI / 視覺專家（範例：Qwen） ---
 [qwen]
-base_url = "http://localhost:8084/v1"   # 你的 OpenAI 相容端點 (LM Studio / vLLM / llama.cpp / Ollama)
-api_key = "local"                        # 本地端隨意填寫
-model    = "你的模型名稱"                 # 例如 qwen3.8-27b；用 GET /v1/models 查詢
+base_url = "http://localhost:8084/v1"   # 本地 (llama.cpp / LM Studio / vLLM / Ollama)
+                                        # 或雲端 (https://api.openai.com/v1、Groq、OpenRouter、DeepSeek…)
+api_key = "local"                        # 本地端隨意填寫；雲端端點填你的 API key
+model    = "你的模型名稱"                 # 例如 qwen3.8-27b；本地用 GET /v1/models 查詢
 system_prompt = "你是一個專精於 UI/UX 佈局的視覺工程師。請專注於畫面美觀、結構清晰與響應式設計。"
 
 # --- 模型 B：架構 / 狀態管理專家（範例：Muse） ---
