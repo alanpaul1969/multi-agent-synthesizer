@@ -1,5 +1,6 @@
 config.toml
 outputs/
+cron-logs/
 __pycache__/
 *.pyc
 .venv/
