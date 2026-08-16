@@ -29,7 +29,7 @@ system_prompt = "你是一位資深的首席軟體架構師，擅長整合不同
 # --- 生成參數 ---
 [generation]
 temperature = 0.3
-max_tokens   = 4096
+max_tokens   = 16384   # 要輸出完整程式碼時別設太小（4096 會截斷長程式碼）
 
 # --- 三種模式的差異 ---
 # synthesize（預設）：兩模型並行作答，融合節點整合優點。

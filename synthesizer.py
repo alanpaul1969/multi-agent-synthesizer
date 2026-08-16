@@ -136,9 +136,13 @@ async def fetch_llm_response(client, model_name, system_prompt, user_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        content = response.choices[0].message.content or ""
+        choice = response.choices[0]
+        content = choice.message.content or ""
         print(f"[{role_name}] 完成 ({time.time() - start:.1f}s, "
               f"{len(content)} chars)")
+        if choice.finish_reason == "length":
+            print(f"[{role_name}] ⚠ 輸出達到 max_tokens 上限被截斷，"
+                  f"請調高 [generation].max_tokens")
         return content
     except Exception as e:
         print(f"[{role_name}] 發生錯誤: {e}")
