@@ -1,7 +1,17 @@
 # Multi-Agent Synthesizer
 
-雙本地 LLM 協作框架，三種可選模式，適用於任何 OpenAI API 相容的本地伺服器
-（llama.cpp、LM Studio、vLLM、Ollama…）。
+> 雙本地 LLM 協作框架：讓兩顆本地模型分工合作、互審產出，並可包成一個 OpenAI 相容 endpoint 給任何 agent 直接載入。
+>
+> A dual local-LLM collaboration framework: two local models divide work, review each other's output, and the whole pipeline can be served as a single OpenAI-compatible endpoint for any agent to load.
+
+**[中文說明](#中文說明)** | **[English](#english)**
+
+適用於任何 OpenAI API 相容的本地伺服器（llama.cpp、LM Studio、vLLM、Ollama…）。
+Works with any OpenAI API-compatible local server (llama.cpp, LM Studio, vLLM, Ollama…).
+
+---
+
+# 中文說明
 
 ## 三種協作模式
 
@@ -55,7 +65,8 @@ cp config.example.toml config.toml   # 填入你自己的端點與模型名稱
 | `[synthesizer]` | 融合節點（建議用你手上推理最強的模型） |
 | `[generation]` | temperature / max_tokens |
 
-模型名稱可用 `curl http://<host>:<port>/v1/models` 查詢。
+區段名稱只是代號，任何兩顆模型都能套用。模型名稱可用
+`curl http://<host>:<port>/v1/models` 查詢。
 
 **單機 VRAM 不足？** 把 `[qwen]` 與 `[muse]` 指向同一個伺服器、同一個模型，
 只靠不同的 system_prompt 區分角色，一樣有「思維碰撞 → 融合」的效果。
@@ -123,3 +134,141 @@ outputs/              執行產出（gitignore）
 不足時可把 `[qwen]` 與 `[muse]` 指向同一個伺服器、同一個模型，
 僅靠不同 system prompt 區分角色（模式仍有效）；或改用「循序載入」
 （先喚醒一個、結束釋放後再載入另一個），代價是換模型的載入時間。
+
+---
+
+# English
+
+## Three Collaboration Modes
+
+### Mode 1 `synthesize`: Parallel Generation + Fusion Brain (default)
+
+```
+                 ┌──> Model A (UI / visual expert) ─────┐
+task prompt ─────┤                                       ├──> Fusion node (chief architect) ──> final result
+                 └──> Model B (architecture / state) ────┘
+                      (asyncio.gather, parallel)
+```
+
+Both models answer the same task in parallel (you only wait for the slower one),
+then a third node fuses the strengths of both outputs.
+
+### Mode 2 `critique`: Critic & Refine
+
+```
+task ──> Model B drafts the architecture ──> Model A reviews from a UI/UX perspective,
+                                             catches gaps, and outputs the corrected version
+```
+
+A developer–reviewer relationship: no third generation step — the reviewer
+directly outputs the integrated, corrected version.
+
+Add `--reverse` to flip the direction: Model A drafts the UI first, Model B reviews
+the architecture and state management. Running both directions gives you a full
+"double-blind review".
+
+### Mode 3 `pipeline`: Specialized Pipeline
+
+```
+task ──> Model A decomposes it into a structured JSON spec ──> Model B implements
+         (widget tree, states, events, data flow)              state management & logic ──> final result
+```
+
+The two models never do the same job: A handles requirement/UI analysis,
+B handles core logic implementation. The final output is a single artifact:
+B's complete, runnable implementation of the spec (`*-final.md`); the JSON spec
+itself is also saved (`*-spec.md`) as an inspectable/reusable intermediate.
+
+## Installation
+
+```bash
+pip install -r requirements.txt
+cp config.example.toml config.toml   # fill in YOUR OWN endpoints and model names
+```
+
+## Configuration
+
+`config.toml` (gitignored, never committed) has four sections:
+
+| Section | Purpose |
+|---|---|
+| `[qwen]` | Model A — UI / visual expert: endpoint, model name, system prompt |
+| `[muse]` | Model B — architecture / state-management expert |
+| `[synthesizer]` | Fusion node (use your strongest-reasoning model here) |
+| `[generation]` | temperature / max_tokens |
+
+Section names are just labels — any two models will do. Look up model names with
+`curl http://<host>:<port>/v1/models`.
+
+**Not enough VRAM for two models?** Point `[qwen]` and `[muse]` at the same
+server and the same model, and separate the roles purely via different
+system_prompts — you still get the "collision of perspectives → fusion" effect.
+
+## Usage
+
+```bash
+# Mode 1 (default): parallel generation + fusion; no task = built-in demo (Flutter + Riverpod + Logger)
+python3 synthesizer.py
+python3 synthesizer.py --mode synthesize "your task"
+
+# Mode 2: Muse drafts, Qwen reviews & fixes
+python3 synthesizer.py --mode critique "Build a todo list with React + Zustand, with local caching"
+
+# Mode 2 reversed: Qwen drafts the UI, Muse reviews the architecture
+python3 synthesizer.py --mode critique --reverse "Build a TodoList input + list screen in Flutter"
+
+# Mode 3: Qwen produces a JSON spec, Muse implements it (final output = full implementation)
+python3 synthesizer.py --mode pipeline "Build an image-upload app with an offline queue and retries"
+```
+
+Results print to the terminal and are saved under `outputs/` with mode and stage
+in the filename (e.g. `*-critique-draft.md`, `*-critique-reverse-draft.md`,
+`*-pipeline-spec.md`, `*-final.md`).
+
+## As an LLM Endpoint for Agents (Server Mode)
+
+Wrap the whole pipeline as an OpenAI-compatible endpoint that any
+OpenAI-API-capable agent or client can load directly:
+
+```bash
+python3 server.py --port 8090
+```
+
+| Setting | Value |
+|---|---|
+| base_url | `http://localhost:8090/v1` |
+| api_key | anything (e.g. `local`) |
+| model | `mas/synthesize`, `mas/critique`, `mas/critique-reverse`, `mas/pipeline` |
+
+The mode **is** the model name: the agent picks which collaboration mode it wants
+by choosing the corresponding model. The last user message becomes the task
+prompt; requests may override `temperature` / `max_tokens` (defaults come from
+`[generation]` in config.toml).
+
+Notes:
+
+- A single request runs the full pipeline, roughly **15–17 minutes** — raise
+  your client's timeout accordingly.
+- Requests are serialized (the backing model servers can only comfortably handle
+  one pipeline at a time); check `GET /health` for the `busy` state.
+- With `stream=true`, an SSE keepalive comment is sent every 30 seconds (standard
+  clients ignore comment lines), stage progress is pushed as comment lines, and
+  only the final result goes into the content.
+
+## Repo Contents
+
+```
+synthesizer.py        Main program (three modes: synthesize / critique / pipeline)
+server.py             OpenAI-compatible API server (the pipeline as one LLM endpoint)
+config.example.toml   Config template (ships with no default endpoints)
+requirements.txt      openai (async), fastapi, uvicorn
+outputs/              Run artifacts (gitignored)
+```
+
+## Hardware Note
+
+Running two 27B–30B models at 4-bit quantization simultaneously needs roughly
+34–36GB of unified memory/VRAM. If you have less, either point `[qwen]` and
+`[muse]` at the same server and same model (roles separated purely by system
+prompts — the modes still work), or load the models sequentially (wake one,
+release it, then load the other) at the cost of model-loading time.
